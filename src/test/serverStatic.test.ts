@@ -12,8 +12,8 @@ const router = new Router();
 router.get(
   '/public/(.*)',
   generateStaticFileHandler({
-    baseUrl: '/public',
     basePath: resolve(__dirname, './public'),
+    baseUrl: '/public',
     normalize: true,
   }),
 );
