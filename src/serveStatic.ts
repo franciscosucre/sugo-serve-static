@@ -1,60 +1,55 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as url from 'url';
 import { FileNotFoundError } from './exceptions';
-import { IGenerateStaticFileHandlerOptions } from './interfaces';
+import { exists, readFile } from './fs';
+// you can pass the parameter in the command line. e.g. node static_server.js 3000
+const port = process.argv[2] || 9000;
 
-export const readFile = (filePath: string) =>
-  new Promise<Buffer>((resolve, reject) => {
-    fs.readFile(filePath, (error: NodeJS.ErrnoException, content: Buffer) => {
-      if (error) {
-        reject(error);
-      } else {
-        resolve(content);
-      }
-    });
-  });
+// maps file extention to MIME types
+const mimeType: any = {
+  '.ico': 'image/x-icon',
+  '.html': 'text/html',
+  '.js': 'text/javascript',
+  '.json': 'application/json',
+  '.css': 'text/css',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.wav': 'audio/wav',
+  '.mp3': 'audio/mpeg',
+  '.svg': 'image/svg+xml',
+  '.pdf': 'application/pdf',
+  '.doc': 'application/msword',
+  '.eot': 'appliaction/vnd.ms-fontobject',
+  '.ttf': 'aplication/font-sfnt',
+};
 
-export const serveFile = async (req: any, res: any, filePath: string) => {
-  const extname = path.extname(filePath).toLowerCase();
-  const mimeTypes: any = {
-    '.css': 'text/css',
-    '.eot': 'application/vnd.ms-fontobject',
-    '.gif': 'image/gif',
-    '.html': 'text/html',
-    '.jpg': 'image/jpg',
-    '.js': 'text/javascript',
-    '.json': 'application/json',
-    '.mp4': 'video/mp4',
-    '.otf': 'application/font-otf',
-    '.png': 'image/png',
-    '.svg': 'application/image/svg+xml',
-    '.ttf': 'application/font-ttf',
-    '.wav': 'audio/wav',
-    '.woff': 'application/font-woff',
-  };
+const serveStatic = ({ dir = path.resolve('./'), baseUrl = '/' }) => async (req: any, res: any, next: any) => {
+  const parsedUrl = url.parse(req.url);
+  const sanitizedUrl = path.normalize(parsedUrl.pathname as string).replace(/^(\.\.[\/\\])+/, '');
+  if (!sanitizedUrl.startsWith(baseUrl)) {
+    return next ? await next() : null;
+  }
 
-  const contentType = mimeTypes[extname] || 'application/octet-stream';
+  let pathname = path.join(dir, sanitizedUrl.replace(baseUrl, ''));
+  if (!(await exists(pathname))) {
+    throw new FileNotFoundError(`File not found. URL: ${sanitizedUrl}`);
+  }
+  // if is a directory, then look for index.html
+  if (fs.statSync(pathname).isDirectory()) {
+    pathname += '/index.html';
+  }
   try {
-    const buffer = await readFile(filePath);
-    res.writeHead(200, { 'Content-Type': contentType });
-    res.end(buffer, 'utf-8');
-  } catch (error) {
-    if (error.code === 'ENOENT') {
-      throw new FileNotFoundError(req.url);
-    } else {
-      throw error;
-    }
+    const data = await readFile(pathname);
+    // based on the URL path, extract the file extention. e.g. .js, .doc, ...
+    const ext = path.parse(pathname).ext;
+    // if the file is found, set Content-type and send data
+    res.setHeader('Content-type', mimeType[ext] || 'text/plain');
+    res.end(data);
+  } catch (err) {
+    res.statusCode = 500;
+    res.end(`Error getting the file: ${err}.`);
   }
 };
 
-export const generateStaticFileHandler = (options: IGenerateStaticFileHandlerOptions) => {
-  options = Object.assign({ baseUrl: '/public', basePath: './public', normalize: true }, options);
-  return async (req: any, res: any) => {
-    let normalizedUrl = options.normalize ? path.normalize(req.url) : req.url;
-    normalizedUrl = normalizedUrl.replace(options.baseUrl, '');
-    const filePath = path.resolve(options.basePath, '.' + normalizedUrl);
-    return await serveFile(req, res, filePath);
-  };
-};
-
-export default generateStaticFileHandler;
+module.exports = serveStatic;
