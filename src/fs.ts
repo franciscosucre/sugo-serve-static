@@ -5,5 +5,5 @@ export const exists = (pathname: string) =>
 
 export const readFile: (pathname: string) => Promise<Buffer> = (pathname: string) =>
   new Promise((resolve, reject) =>
-    fs.readFile(pathname, (err: NodeJS.ErrnoException, data: Buffer) => err ? reject(err) : resolve(data)),
+    fs.readFile(pathname, (err: NodeJS.ErrnoException, data: Buffer) => (err ? reject(err) : resolve(data))),
   );
