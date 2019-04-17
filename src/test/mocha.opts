@@ -1,0 +1,7 @@
+--timeout 999999
+--exit
+true
+--colors
+true
+--recursive
+true

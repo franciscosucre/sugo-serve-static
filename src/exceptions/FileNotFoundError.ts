@@ -7,3 +7,5 @@ export class FileNotFoundError extends Error {
     return Object.assign(this, { message: this.message, stack: this.stack });
   }
 }
+
+export default FileNotFoundError;

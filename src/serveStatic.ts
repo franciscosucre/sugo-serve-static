@@ -25,35 +25,48 @@ const mimeType: { [key: string]: string } = {
 export interface IServeStaticOptions {
   dir: string;
   baseUrl?: string;
+  notFoundRedirectPath?: string;
 }
 
-export const serveStatic = (options: IServeStaticOptions) => async (req: any, res: any, next: any) => {
-  let { pathname } = url.parse(req.url);
-  let sanitizedUrl: string;
-  if (options.baseUrl) {
-    pathname = (pathname as string).replace(options.baseUrl, '');
+const sanitizePath = (rawPath: string, dir: string, baseUrl?: string) => {
+  let { pathname } = url.parse(rawPath);
+  let sanitizedPath: string;
+  if (baseUrl) {
+    pathname = (pathname as string).replace(baseUrl, '');
   }
-  sanitizedUrl = path.normalize(pathname as string).replace(/^(\.\.[\/\\])+/, '');
-  pathname = path.join(options.dir, sanitizedUrl);
-  if (!(await exists(pathname))) {
-    throw new FileNotFoundError(`File not found. URL: ${sanitizedUrl}`);
+  sanitizedPath = path.normalize(pathname as string).replace(/^(\.\.[\/\\])+/, '');
+  if (path.isAbsolute(dir)) {
+    sanitizedPath = path.join(dir, sanitizedPath);
+  } else {
+    sanitizedPath = path.join(process.cwd(), dir, sanitizedPath);
   }
-  // if is a directory, then look for index.html
+  return sanitizedPath;
+};
+
+const getFile = async (rawPath: string, options: IServeStaticOptions): Promise<{ data: Buffer; ext: string }> => {
+  let pathname = sanitizePath(rawPath, options.dir, options.baseUrl);
+  const pathExists = await exists(pathname);
+  if (!pathExists && !options.notFoundRedirectPath) {
+    throw new FileNotFoundError(`File not found. URL: ${pathname}`);
+  } else if (!pathExists && options.notFoundRedirectPath) {
+    return getFile(options.notFoundRedirectPath, {
+      baseUrl: options.baseUrl,
+      dir: options.dir,
+    });
+  }
   if (fs.statSync(pathname).isDirectory()) {
-    pathname += '/index.html';
+    pathname = path.join(pathname, 'index.html');
   }
-  try {
-    const data = await readFile(pathname);
-    // based on the URL path, extract the file extention. e.g. .js, .doc, ...
-    const ext = path.parse(pathname).ext;
-    // if the file is found, set Content-type and send data
-    res.setHeader('Content-type', mimeType[ext] || 'text/plain');
-    res.setHeader('content-length', data.byteLength);
-    res.end(data);
-  } catch (err) {
-    res.statusCode = 500;
-    res.end(`Error getting the file: ${err}.`);
-  }
+  const data = await readFile(pathname);
+  const ext = path.parse(pathname).ext;
+  return { data, ext };
+};
+
+export const serveStatic = (options: IServeStaticOptions) => async (req: any, res: any, next?: any) => {
+  const { data, ext } = await getFile(url.parse(req.url).pathname as string, options);
+  res.setHeader('Content-type', mimeType[ext] || 'text/plain');
+  res.setHeader('content-length', data.byteLength);
+  res.end(data);
 };
 
 export default serveStatic;
